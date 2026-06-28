@@ -7,6 +7,9 @@
     "slash-hn": "cli.mjs",
     "shn": "cli.mjs"
   },
-  "engines": { "node": ">=20" },
+  "engines": { "node": ">=22" },
+  "dependencies": {
+    "sweet-cookie-local": "file:../slash-x/vendor/sweet-cookie"
+  },
   "license": "MIT"
 }
