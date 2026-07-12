@@ -183,12 +183,54 @@ async function auth(c) {
   ].join(" "));
 }
 
-async function getHmac(c, id) {
+function parseAttrs(tag) {
+  const attrs = {};
+  const re = /([A-Za-z_:][-A-Za-z0-9_:.]*)\s*=\s*("([^"]*)"|'([^']*)'|([^\s"'>]+))/g;
+  for (const m of tag.matchAll(re)) attrs[m[1].toLowerCase()] = m[3] || m[4] || m[5] || "";
+  return attrs;
+}
+
+function commentForm(html) {
+  for (const m of String(html || "").matchAll(/<form\b[^>]*>[\s\S]*?<\/form>/gi)) {
+    const form = m[0];
+    const open = /<form\b[^>]*>/i.exec(form)?.[0] || "";
+    const attrs = parseAttrs(open);
+    if (!String(attrs.action || "").toLowerCase().includes("comment")) continue;
+    if (!/<textarea\b[^>]*\bname=["']?text\b/i.test(form)) continue;
+    const fields = {};
+    for (const input of form.matchAll(/<input\b[^>]*>/gi)) {
+      const a = parseAttrs(input[0]);
+      if (a.name) fields[a.name] = a.value || "";
+    }
+    if (fields.hmac) return fields;
+  }
+  return null;
+}
+
+function stripHtml(html) {
+  return String(html || "").replace(/<[^>]+>/g, " ").replace(/\s+/g, " ").trim();
+}
+
+function missingFormError(html) {
+  const low = stripHtml(html).toLowerCase();
+  if (low.includes("you have to be logged in") || low.includes("bad login")) {
+    return "HN session not logged in - re-auth HN, then retry";
+  }
+  if (low.includes("comments are closed") || low.includes("too old to comment")) {
+    return "HN thread is closed to new comments";
+  }
+  if (low.includes("item not found") || low.includes("no such item")) {
+    return "HN item not found";
+  }
+  return "HN item is not replyable right now (no comment form found)";
+}
+
+async function getCommentForm(c, id) {
   const res = await fetch(`${BASE}/item?id=${id}`, { headers: { cookie: c.cookie, "user-agent": "slash-hn/0.1" } });
   const html = await res.text();
-  const m = /name="hmac"\s+value="([^"]+)"/.exec(html);
-  if (!m) throw new Error("could not find the comment form (is the item locked, or are you logged in?)");
-  return m[1];
+  const form = commentForm(html);
+  if (!form) throw new Error(missingFormError(html));
+  return form;
 }
 
 async function verifyLogin(c) {
@@ -235,11 +277,11 @@ async function main() {
       const text = await readBody(parsed, 2);
       if (!text) throw new Error("empty comment (pass <text> or --file)");
       await auth(c);
-      const hmac = await getHmac(c, id);
+      const form = await getCommentForm(c, id);
       const res = await fetch(`${BASE}/comment`, {
         method: "POST",
         headers: { "content-type": "application/x-www-form-urlencoded", cookie: c.cookie, "user-agent": "slash-hn/0.1" },
-        body: new URLSearchParams({ parent: id, goto: `item?id=${id}`, hmac, text }),
+        body: new URLSearchParams({ parent: form.parent || id, goto: form.goto || `item?id=${id}`, hmac: form.hmac, text }),
         redirect: "manual",
       });
       if (res.status >= 400) throw new Error(`HN returned ${res.status}`);
