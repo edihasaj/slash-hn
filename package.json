@@ -1,6 +1,6 @@
 {
   "name": "slash-hn",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "Edi's local Hacker News CLI — comment and reply on HN from the command line.",
   "type": "module",
   "bin": {
